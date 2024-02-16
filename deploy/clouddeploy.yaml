@@ -1,0 +1,23 @@
+apiVersion: deploy.cloud.google.com/v1
+kind: DeliveryPipeline
+metadata:
+  name: vertex-ai-cloud-deploy-pipeline
+serialPipeline:
+  stages:
+  - targetId: prod-endpoint
+    strategy:
+      standard:
+        postdeploy:
+          actions: ["add-aliases"]
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Target
+metadata:
+  name: prod-endpoint
+customTarget:
+  customTargetType: vertex-ai-endpoint
+deployParameters:
+  customTarget/vertexAIEndpoint: projects/$PROJECT_ID/locations/$REGION/endpoints/$ENDPOINT_ID
+  customTarget/vertexAIConfigurationPath: "prod/deployedModel.yaml"
+  customTarget/vertexAIMinReplicaCount: "3"
+  customTarget/vertexAIAliases: "prod,champion"

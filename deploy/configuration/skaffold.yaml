@@ -1,0 +1,8 @@
+apiVersion: skaffold/v4beta7
+kind: Config
+customActions:
+- name: add-aliases
+  containers:
+  - name: add-aliases
+    image: $REGION-docker.pkg.dev/$PROJECT_ID/cd-custom-targets/$_CT_IMAGE_NAME@$IMAGE_SHA
+    args: ["/bin/vertex-ai-deployer", "--add-aliases-mode"]

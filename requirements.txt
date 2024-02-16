@@ -1,0 +1,4 @@
+google-cloud-aiplatform
+google-cloud-pipeline-components
+kfp
+pytest

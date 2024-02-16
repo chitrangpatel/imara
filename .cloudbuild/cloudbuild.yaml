@@ -1,0 +1,103 @@
+# Copyright 2024 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+substitutions:
+  _GCS_BUCKET: gs://rlhf-artifacts
+  _PIPELINE_REGISTRY: rlhf-pipelines
+  _REGION: us-central1
+
+steps:
+  - id: install requirements
+    name: python:3.11
+    entrypoint: bash
+    args:
+    - -c
+    - |
+      python -m pip install -U -r requirements.txt --user
+
+  - id: run unit tests
+    name: python:3.11
+    entrypoint: bash
+    args:
+    - -c
+    - |
+      python -m pytest
+
+  - id: copy data to bucket
+    name: gcr.io/cloud-builders/gsutil
+    entrypoint: bash
+    args:
+    - -c
+    - |
+      gsutil cp -r data ${_GCS_BUCKET}
+
+  - id: compile tuning pipeline
+    name: python:3.11
+    entrypoint: python
+    args:
+    - -c
+    - |
+      from kfp import compiler
+      from pkg.tuner import rlhf, metadata
+
+      compiler.Compiler().compile(
+        pipeline_func=rlhf.tune, package_path=metadata.COMPILED_PIPELINE_PATH
+      )
+
+  - id: upload tuning pipeline
+    name: python:3.11
+    entrypoint: python
+    args:
+    - -c
+    - |
+      from pkg.tuner import registry, metadata
+
+      registry.upload(
+        project_id='${PROJECT_ID}',
+        region='${_REGION}',
+        pipeline_registry='${_PIPELINE_REGISTRY}',
+        compiled_pipeline_path=metadata.COMPILED_PIPELINE_PATH
+      )
+
+  - id: tune foundation model
+    name: python:3.11
+    entrypoint: python
+    args:
+    - -c
+    - |
+      import google.cloud.aiplatform as aiplatform
+      from pkg.tuner import steps, registry, metadata, parameters
+
+      REWARD_MODEL_TRAIN_STEPS = steps.get_reward_model_train_steps()
+      REINFORCEMENT_LEARNING_TRAIN_STEPS = steps.get_reinforcement_learning_train_steps()
+      PIPELINE_TEMPLATE_URI = 'https://${_REGION}-kfp.pkg.dev/$PROJECT_ID/${_PIPELINE_REGISTRY}/rlhf-tune-pipeline/latest'
+    
+      job = aiplatform.PipelineJob(
+          display_name=metadata.MODEL_DISPLAY_NAME,
+          pipeline_root=metadata.PIPELINE_ROOT,
+          template_path=PIPELINE_TEMPLATE_URI,
+          parameter_values=parameters.get_values(
+              preference_dataset=metadata.PREFERENCE_DATASET,
+              prompt_dataset=metadata.PROMPT_DATASET,
+              eval_dataset=metadata.EVALUATION_DATASET,
+              reward_model_train_steps=REWARD_MODEL_TRAIN_STEPS,
+              reinforcement_learning_train_steps=REINFORCEMENT_LEARNING_TRAIN_STEPS
+          )
+      )
+
+      job.run()
+
+  #...add cloud deploy steps
+    
+timeout: 86400s
